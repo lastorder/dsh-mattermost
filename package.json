@@ -1,0 +1,84 @@
+{
+  "name": "dsh-mattermost",
+  "version": "0.1.0",
+  "description": "Mattermost bridge for DeepSeek Harness: route mentions to DSH workspaces and sessions, then reply in Mattermost threads.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lastorder/dsh-mattermost.git"
+  },
+  "homepage": "https://github.com/lastorder/dsh-mattermost#readme",
+  "bugs": {
+    "url": "https://github.com/lastorder/dsh-mattermost/issues"
+  },
+  "packageManager": "pnpm@11.22.0",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "icon": "./icon.svg",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib/*.js",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "mattermost",
+    "chatops",
+    "bot"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "verify": "node --check index.js && node --check client.js && node --check lib/core.js && node --check lib/config.js && node --check lib/mattermost.js && node --check lib/bridge.js && node --check scripts/mm-local.mjs && node --test \"test/*.test.js\"",
+    "prepublishOnly": "npm run verify",
+    "fake-mattermost": "node scripts/fake-mattermost.js",
+    "mm:up": "docker compose up -d --wait",
+    "mm:setup": "node scripts/mm-local.mjs setup",
+    "mm:info": "node scripts/mm-local.mjs info",
+    "mm:post": "node scripts/mm-local.mjs post",
+    "mm:logs": "docker compose logs -f --tail 100 mattermost",
+    "mm:down": "docker compose down"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ws": "^8.18.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  }
+}

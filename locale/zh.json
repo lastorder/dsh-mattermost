@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mattermost 桥接",
+    "description": "监听 Mattermost 中指定的消息（@提及、私聊或自定义匹配规则），交给指定的 DSH 会话处理，并在原消息串中回复。"
+  }
+}

@@ -1,0 +1,39 @@
+# Local Mattermost for manual testing of dsh-mattermost.
+# See README → "Manual testing with a local Mattermost".
+#
+#   pnpm run mm:up      # start (waits until the server answers; first start takes 1–3 min on Apple Silicon)
+#   pnpm run mm:setup   # create the admin, test users, team and the bot + token
+#   pnpm run mm:down    # stop and delete the container (all Mattermost data is reset)
+#
+# The preview image bundles Mattermost + PostgreSQL in one container and is
+# linux/amd64 only; on Apple Silicon it runs under Rosetta or QEMU emulation.
+# Use MM_PORT to pick another host port, e.g. `MM_PORT=8066 pnpm run mm:up`.
+name: dsh-mattermost-dev
+
+services:
+  mattermost:
+    image: mattermost/mattermost-preview
+    platform: linux/amd64
+    container_name: dsh-mattermost-mm
+    ports:
+      - "${MM_PORT:-8065}:8065"
+    environment:
+      MM_SERVICESETTINGS_SITEURL: "http://localhost:${MM_PORT:-8065}"
+      # The bridge connects as a bot account with an access token.
+      MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION: "true"
+      MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
+      # Lets testers sign up extra accounts in the browser.
+      MM_TEAMSETTINGS_ENABLEOPENSERVER: "true"
+      MM_LOGSETTINGS_ENABLEDIAGNOSTICS: "false"
+      MM_SERVICESETTINGS_ENABLESECURITYFIXALERT: "false"
+    healthcheck:
+      # The image has no curl/wget: ask /api/v4/system/ping over bash's /dev/tcp.
+      test:
+        - CMD
+        - bash
+        - -c
+        - exec 3<>/dev/tcp/127.0.0.1/8065 && printf 'GET /api/v4/system/ping HTTP/1.0\r\n\r\n' >&3 && grep -q '"status":"OK"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 36
+      start_period: 60s

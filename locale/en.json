@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Mattermost Bridge",
+    "description": "Answer Mattermost messages (@mentions, direct messages, or a pattern) with a DSH session and reply in the thread."
+  }
+}

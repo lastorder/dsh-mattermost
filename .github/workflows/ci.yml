@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run verify
+      - name: Inspect published package contents
+        run: |
+          npm pack --dry-run --json > package-audit.json
+          node -e '
+            const fs = require("node:fs");
+            const report = JSON.parse(fs.readFileSync("package-audit.json", "utf8"));
+            const pkg = Array.isArray(report) ? report[0] : Object.values(report)[0];
+            const names = pkg.files.map((file) => file.path);
+            for (const required of ["index.js", "client.js", "cordis.patch.yml", "locale/en.json", "locale/zh.json"]) {
+              if (!names.includes(required)) throw new Error(`npm tarball is missing ${required}`);
+            }
+            if (names.some((name) => name.startsWith("test/") || name.startsWith(".mm-") || name.startsWith("node_modules/"))) {
+              throw new Error("npm tarball contains local or test files");
+            }
+          '
+          rm package-audit.json

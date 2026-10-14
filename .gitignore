@@ -1,0 +1,8 @@
+node_modules/
+*.log
+.DS_Store
+.mm-local.json
+.npmrc
+.env
+.env.*
+package-audit.json

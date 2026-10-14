@@ -1,0 +1,49 @@
+# dsh-mattermost bundle layer: one row carrying the Host half (index.js) and
+# the Client half (client.js, the settings page under sidebar → Plugins).
+#
+# Configure it on that page: add one "environment" per Mattermost server /
+# bot account, test the connection, add routes (@name → DSH workspace →
+# session mode), and set triggers, scope and shared behavior. Saving applies
+# live.
+#
+# Or override this row from your profile's cordis.patch.yml (a patch replaces
+# the whole `config`, so restate every field you set). Commented values show
+# the defaults:
+#
+# - id: mattermost
+#   name: dsh-mattermost
+#   config:
+#     connections:
+#       - id: company                         # stable key; keep it when renaming
+#         name: Company
+#         serverUrl: https://mattermost.example.com
+#         token: <bot access token>           # or: !!js process.env.MM_TOKEN
+#         routes:                             # empty: @<bot username> in one shared session
+#           - id: orion-agent
+#             mentionName: orion-agent        # default: the bot account username
+#             workspace: /path/to/orion-agent # default: the shared `workspace` below
+#             sessionMode: shared             # shared | thread | new
+#             # sessionId: <DSH session id>   # shared: empty = /mattermost bind, else auto-created
+#           - id: orion-wizard
+#             mentionName: orion-wizard
+#             workspace: /path/to/orion-wizard
+#             sessionMode: new
+#         # enabled: true
+#         # triggerOnMention: true
+#         # triggerOnDirectMessage: true      # direct messages go to the first route
+#         # followThreads: false
+#         # triggerPattern: '^!ask\s+(?<prompt>[\s\S]+)'
+#         # channels: [town-square]           # empty: every channel the bot joined
+#         # allowedUsers: [alice, bob]        # empty: everyone
+#         # greetingEnabled: false
+#         # greetingChannelId: <channel id>
+#     # autoCreateSession: true
+#     # workspace: /path/to/project           # default workspace of routes without one
+#     # maxConcurrent: 3                      # requests running at once per environment
+#     # threadContextMaxMessages: 20
+#     # queueMaxSize: 10
+#     # replyTimeoutMinutes: 60
+#     # replyMode: final                      # or: all
+- insert:
+    - id: mattermost
+      name: dsh-mattermost
