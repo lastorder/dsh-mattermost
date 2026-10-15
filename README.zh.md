@@ -251,11 +251,11 @@ pnpm run fake-mattermost -- --port 18065 --token test-token   # 手动联调用�
 
 ## 发布（维护者）
 
-CI 流水线（`.github/workflows/ci.yml`）在推送和 PR 时运行 `pnpm run verify` 并检查 npm 包内容。发布流水线（`.github/workflows/publish.yml`）使用 [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) 的 GitHub OIDC 身份，**不使用 GitHub Secrets 中的 npm token**；只有非预发布的 GitHub Release、且 tag 恰好为 `v<package.json 中的版本>` 时才发布。请仅从受保护、经过审查的 tag 发版。
+CI 流水线（`.github/workflows/ci.yml`）在推送和 PR 时运行 `pnpm run verify` 并检查 npm 包内容。发布流水线（`.github/workflows/publish.yml`）使用 [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) 的 GitHub OIDC 身份，**不使用 GitHub Secrets 中的 npm token**；非预发布的 GitHub Release 且 tag 恰好为 `v<package.json 中的版本>` 时，流水线将 npm 包**暂存**，随后由 npm 包所有者使用 2FA 审批才正式发布。请仅从受保护、经过审查的 tag 发版。已有 Release 的暂存重试可手动运行同一个工作流，输入原 `tag=v0.1.1`，无需移动 tag。
 
 **首版 `0.1.0`** 在维护者自己的电脑上发布一次：先执行 `npm login --registry=https://registry.npmjs.org/`、`pnpm run verify`，再执行 `npm publish --access public`。`prepublishOnly` 会再跑一次校验。不要提交 `.npmrc`、`.mm-local.json` 或任何凭据。已发布的版本不能再次发布。
 
-首版发布后，包所有者须在 **npmjs.com → dsh-mattermost → Settings → Trusted Publishers** 添加 GitHub Actions 发布者：owner `lastorder`、repository `dsh-mattermost`、workflow 文件名 **`publish.yml`**，允许直接 `npm publish`（而非只暂存）。无须配置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。设置后需在两天内完成首次可信发布，否则按 [npm 文档](https://docs.npmjs.com/trusted-publishers/) 重新配置。后续从公开 GitHub 仓库发布的版本会自动带 provenance；本机首版不会补发 provenance。
+首版发布后，包所有者须在 **npmjs.com → dsh-mattermost → Settings → Trusted Publishers** 添加 GitHub Actions 发布者：owner `lastorder`、repository `dsh-mattermost`、workflow 文件名 **`publish.yml`**，允许**暂存** npm 包即可；不必允许直接 `npm publish`，由所有者稍后审批暂存版本。无须配置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。设置后需在两天内完成首次可信发布，否则按 [npm 文档](https://docs.npmjs.com/trusted-publishers/) 重新配置。后续从公开 GitHub 仓库审批发布的版本会带 provenance；本机首版不会补发 provenance。
 
 后续发版先递增版本、提交并推送 tag，再创建 GitHub Release（以下 `0.1.2` 换成当次版本）：
 
@@ -270,7 +270,7 @@ git push origin main v0.1.2
 gh release create v0.1.2 --verify-tag --title "v0.1.2" --generate-notes
 ```
 
-然后检查 workflow 和 `npm view dsh-mattermost version`。**不要**为本机已发布的 `v0.1.0` 创建 GitHub Release，否则流水线会尝试重复发布同一版本。
+工作流成功后，在 npmjs.com 用 2FA 审批暂存版本（也可以由已登录的维护者运行 `npm stage list dsh-mattermost` 和 `npm stage approve <stage-id>`），再检查 `npm view dsh-mattermost version`。**暂存成功不代表已正式发布**。不要为本机已发布的 `v0.1.0` 创建 GitHub Release，否则流水线会尝试重复发布同一版本。
 
 ## 许可证
 

@@ -3,23 +3,29 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to stage (for retry after a failed release job)'
+        required: true
+        type: string
 
 permissions:
   contents: read
   id-token: write # npm Trusted Publishing (OIDC); no npm token in GitHub Secrets
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: npm-stage-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: ${{ !github.event.release.prerelease }}
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
           persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
@@ -31,10 +37,13 @@ jobs:
           package-manager-cache: false
       - name: Check release tag matches package version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+      - name: Install npm CLI with staged publishing support
+        run: npm install --global npm@12.0.2
       - run: pnpm install --frozen-lockfile
       - run: pnpm run verify
-      # Configure the Trusted Publisher for this *exact* workflow on npmjs.com
-      # after the first local npm publish. No NPM_TOKEN or NODE_AUTH_TOKEN needed.
-      - run: npm publish --access public
+      # npm Trusted Publisher may stage but cannot publish directly: the package
+      # owner must review and approve the staged version with 2FA on npmjs.com.
+      # No NPM_TOKEN or NODE_AUTH_TOKEN is needed in GitHub Secrets.
+      - run: npm stage publish . --access public

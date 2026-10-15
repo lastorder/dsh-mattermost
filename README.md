@@ -316,11 +316,11 @@ The fake server (`scripts/fake-mattermost.js`) implements the REST calls and Web
 
 ## Publishing (maintainers)
 
-The CI workflow (`.github/workflows/ci.yml`) runs `pnpm run verify` and audits the npm tarball on pushes and pull requests. The release workflow (`.github/workflows/publish.yml`) uses [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) (GitHub OIDC), **not** an npm access token in GitHub Secrets. It runs on a non-prerelease GitHub Release whose tag exactly matches `v<package.json version>`. Only release from a reviewed, protected tag.
+The CI workflow (`.github/workflows/ci.yml`) runs `pnpm run verify` and audits the npm tarball on pushes and pull requests. The release workflow (`.github/workflows/publish.yml`) uses [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) (GitHub OIDC), **not** an npm access token in GitHub Secrets. A non-prerelease GitHub Release whose tag matches `v<package.json version>` **stages** the npm package for publication; the npm package owner must then review and approve that staged version with 2FA. Only release from a reviewed, protected tag. A manual workflow dispatch with `tag=v0.1.1` can retry staging an existing tag after a failed run without moving the tag.
 
 **Initial release (`0.1.0`)** is published once from a maintainer's own machine, after `npm login --registry=https://registry.npmjs.org/`, `pnpm run verify`, and `npm publish --access public`. Do not commit `.npmrc`, `.mm-local.json`, or credentials. `prepublishOnly` runs verification again. A version already published to npm cannot be published a second time.
 
-After the first release, the package owner must visit **npmjs.com → dsh-mattermost → Settings → Trusted Publishers** and add a GitHub Actions publisher: owner `lastorder`, repository `dsh-mattermost`, workflow filename **`publish.yml`**. Allow direct `npm publish` (rather than stage-only). No `NPM_TOKEN` or `NODE_AUTH_TOKEN` GitHub secret is needed. Complete the first trusted release within two days of adding the publisher, or reconfigure it; see [npm's instructions](https://docs.npmjs.com/trusted-publishers/). Public GitHub releases published via this workflow include npm provenance automatically; the initial local version does not.
+After the first release, the package owner must visit **npmjs.com → dsh-mattermost → Settings → Trusted Publishers** and add a GitHub Actions publisher: owner `lastorder`, repository `dsh-mattermost`, workflow filename **`publish.yml`**, with permission to **stage** packages. Direct `npm publish` permission is deliberately not required: the owner approves a staged version later. No `NPM_TOKEN` or `NODE_AUTH_TOKEN` GitHub secret is needed. Complete the first trusted release within two days of adding the publisher, or reconfigure it; see [npm's instructions](https://docs.npmjs.com/trusted-publishers/). Approved public GitHub releases include npm provenance automatically; the initial local version does not.
 
 For a **later** release, bump the version, commit, tag, push, then publish a non-prerelease GitHub Release (replace `0.1.2` with the new version):
 
@@ -335,7 +335,7 @@ git push origin main v0.1.2
 gh release create v0.1.2 --verify-tag --title "v0.1.2" --generate-notes
 ```
 
-Check the release workflow and `npm view dsh-mattermost version` afterwards. Do **not** create a GitHub Release for `v0.1.0`: it was published locally already and cannot be re-published by the workflow.
+After the workflow succeeds, approve the staged version on npmjs.com with 2FA (or run `npm stage list dsh-mattermost` and `npm stage approve <stage-id>` from an authenticated maintainer CLI). Then check `npm view dsh-mattermost version`. A successful staging job alone does **not** mean the package is public yet. Do **not** create a GitHub Release for `v0.1.0`: it was published locally already and cannot be re-published by the workflow.
 
 ## License
 
