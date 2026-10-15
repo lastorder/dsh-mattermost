@@ -11,6 +11,7 @@ import {
   findMention,
   ignoreReason,
   matchTrigger,
+  matchRoutedTriggers,
   mentionPattern,
   parsePostedEvent,
   selectReply,
@@ -86,7 +87,7 @@ test('matchTrigger handles mentions, direct messages, patterns and the mention l
   assert.deepEqual(matchTrigger(event('!ask build the docs'), { ...base, pattern }), { via: 'pattern', prompt: 'build the docs' })
   assert.deepEqual(matchTrigger(event('deploy please'), { ...base, pattern: compilePattern('deploy') }), { via: 'pattern', prompt: 'deploy please' })
   assert.equal(matchTrigger(event('@everyone hi', { mentions: ['bot'] }), base), undefined)
-  assert.deepEqual(matchTrigger(event('@channel hi', { mentions: ['bot'] }), { ...base, matchMentionsList: true }), { via: 'mention', prompt: '@channel hi' })
+  assert.deepEqual(matchTrigger(event('@channel hi', { mentions: ['bot'] }), { ...base, matchMentionsList: true }), { via: 'mention-list', prompt: '@channel hi' })
 })
 
 test('matchTrigger reports which of several route names was mentioned', () => {
@@ -99,6 +100,34 @@ test('matchTrigger reports which of several route names was mentioned', () => {
   assert.deepEqual(matchTrigger(event('hi there', { channelType: 'D' }), base), { via: 'direct', prompt: 'hi there' })
   assert.equal(matchTrigger(event('@orion-agent-dev hi'), base), undefined)
   assert.equal(matchTrigger(event('@bot hi'), base), undefined)
+})
+
+test('routed triggers choose one priority match or independently dispatch all matches', () => {
+  const routes = [
+    { key: 'agent', mentionName: 'orion-agent', triggerOnMention: true, triggerOnDirectMessage: true, followThreads: true, matchMentionsList: true, triggerPattern: '^!ask\\s+(?<prompt>.+)' },
+    { key: 'wizard', mentionName: 'orion-wizard', triggerOnMention: true, triggerOnDirectMessage: false, followThreads: true, matchMentionsList: false, triggerPattern: '^!ask\\s+(?<prompt>.+)' },
+  ]
+  const options = { botUserId: 'bot', botUsername: 'dsh-bot', patternForRoute: (route) => compilePattern(route.triggerPattern) }
+  const selected = (message, extra, more = {}) => matchRoutedTriggers(event(message, extra), routes, { ...options, ...more })
+  assert.deepEqual(selected('@orion-wizard @orion-agent hello', {}, { multiple: true }).map(({ route, trigger }) => [route.key, trigger.prompt]), [
+    ['agent', 'hello'], ['wizard', 'hello'],
+  ])
+  assert.equal(selected('@orion-wizard @orion-agent hello', {})[0].route.key, 'wizard', 'earliest explicit mention wins over route order')
+  assert.deepEqual(selected('!ask build it', {}, { multiple: true }).map(({ route, trigger }) => [route.key, trigger.prompt]), [
+    ['agent', 'build it'], ['wizard', 'build it'],
+  ])
+  assert.equal(selected('!ask build it', {})[0].route.key, 'agent', 'first matching regex wins in single-route mode')
+  assert.equal(matchRoutedTriggers(event('!WIZARD build it'), [{ key: 'wizard', mentionName: 'orion-wizard', triggerPattern: '^!wizard\\s+(?<prompt>.+)', triggerPatternFlags: 'i' }], {
+    botUsername: 'dsh-bot', patternForRoute: (route) => compilePattern(route.triggerPattern, route.triggerPatternFlags),
+  })[0].trigger.prompt, 'build it', 'i flag on an individual route ignores case')
+  assert.deepEqual(selected('@orion-wizard hi', { channelType: 'D' }, { multiple: true }).map(({ route, trigger }) => [route.key, trigger.prompt]), [
+    ['agent', 'hi'], ['wizard', 'hi'],
+  ])
+  assert.equal(selected('@orion-wizard hi', { channelType: 'D' })[0].route.key, 'wizard', 'explicit mention beats another route’s DM trigger')
+  assert.deepEqual(selected('@channel hello', { mentions: ['bot'] }, { multiple: true }).map(({ route }) => route.key), ['agent'])
+  assert.deepEqual(selected('follow-up', { post: { root_id: 'r' } }, { multiple: true, threadRouteKeys: ['agent', 'wizard'] }).map(({ route }) => route.key), ['agent', 'wizard'])
+  assert.equal(selected('follow-up', { post: { root_id: 'r' } }, { threadRouteKeys: ['wizard'] })[0].route.key, 'wizard')
+  assert.deepEqual(selected('unmatched text', {}), [])
 })
 
 test('findMention and cleanMentions', () => {

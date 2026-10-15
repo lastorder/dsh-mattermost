@@ -235,6 +235,32 @@ test('channel and user filters', async () => {
   }
 })
 
+test('each route enforces its own scope without weakening legacy filters', async () => {
+  const t = await setup({ config: {
+    channels: ['dev'], allowedUsers: ['alice'], routeToAllMatches: true,
+    routes: [
+      { id: 'agent', mentionName: 'orion-agent', sessionId: 'session-main' },
+      { id: 'wizard', mentionName: 'orion-wizard', sessionId: 'session-main', channels: ['sales'], allowedUsers: ['bob'], triggerOnMention: false },
+    ],
+  } })
+  try {
+    const dev = { channel: 'c-dev', channel_name: 'dev', channel_display_name: 'Dev' }
+    const sales = { channel: 'c-sales', channel_name: 'sales', channel_display_name: 'Sales' }
+    const inherited = t.server.post({ message: '@orion-agent hi', ...dev })
+    assert.match(await finalReply(t, inherited.id), /echo: @alice: hi/)
+    const denied = t.server.post({ message: '@orion-agent hi', user: 'user-bob', ...dev })
+    assert.match(await finalReply(t, denied.id), /permission/)
+    const custom = t.server.post({ message: '@orion-wizard hi', user: 'user-bob', ...sales })
+    assert.match(await finalReply(t, custom.id), /echo: @bob: hi/, 'route mention remains active even with legacy triggerOnMention false')
+    const excluded = t.server.post({ message: '@orion-agent no', ...sales })
+    await sleep(100)
+    assert.equal(t.botPosts().some((post) => post.root_id === excluded.id), false)
+    assert.equal(t.dsh.prompts.length, 2)
+  } finally {
+    await t.close()
+  }
+})
+
 test('an empty mention gets the empty-message notice without a prompt', async () => {
   const t = await setup()
   try {
@@ -887,6 +913,117 @@ test('a route directory that is not a DSH workspace yet is registered as one', a
     await finalReply(t, asked.id)
     assert.deepEqual(workspaces.created, ['/ws/brand-new'])
     assert.equal(t.dsh.creates[0].workspaceId, 'ws-3')
+  } finally {
+    await t.close()
+  }
+})
+
+test('fan-out posts one labeled reply per matching route, including follow-ups in their thread', async () => {
+  const pattern = '^!ask\\s+(?<prompt>.+)'
+  const t = await setup({ config: {
+    routeToAllMatches: true,
+    routes: [
+      { id: 'agent', mentionName: 'orion-agent', sessionMode: 'shared', sessionId: 'session-main', followThreads: true, triggerPattern: pattern, triggerOnDirectMessage: false },
+      { id: 'wizard', mentionName: 'orion-wizard', sessionMode: 'shared', sessionId: 'session-wizard', followThreads: true, triggerPattern: pattern, triggerOnDirectMessage: false },
+    ],
+  } })
+  t.dsh.addSession('session-wizard', (text) => ({ texts: [`wizard: ${text.split('\n').at(-1)}`] }))
+  try {
+    const ask = t.server.post({ message: '!ask create a plan' })
+    const replies = await finalReplies(t, ask.id, 2)
+    assert.ok(replies.some((message) => message === '@alice [@orion-agent] echo: @alice: create a plan'))
+    assert.ok(replies.some((message) => message === '@alice [@orion-wizard] wizard: @alice: create a plan'))
+    assert.deepEqual(t.dsh.prompts.slice(0, 2).map((prompt) => prompt.sessionId).sort(), ['session-main', 'session-wizard'])
+    assert.equal(t.dsh.prompts.length, 2, 'each route handles this post exactly once')
+
+    const mentioned = t.server.post({ message: '@orion-agent @orion-wizard help' })
+    const both = await finalReplies(t, mentioned.id, 2)
+    assert.ok(both.every((message) => message.includes(': @alice: help')), 'all routed prompts remove both route mentions')
+    assert.equal(t.dsh.prompts.length, 4)
+
+    t.server.post({ message: 'continue', root_id: ask.id })
+    const followUps = await finalReplies(t, ask.id, 4)
+    assert.equal(followUps.filter((message) => message.includes('[@orion-agent]')).length, 2)
+    assert.equal(followUps.filter((message) => message.includes('[@orion-wizard]')).length, 2)
+    assert.equal(t.dsh.prompts.length, 6, 'follow-up goes to both routes, not twice to either')
+    assert.equal((await t.call('status')).body.connections[0].routeToAllMatches, true)
+  } finally {
+    await t.close()
+  }
+})
+
+test('changing the all-matching-routes switch applies live without reconnecting', async () => {
+  const pattern = '^!ask\\s+(?<prompt>.+)'
+  const t = await setup({ config: {
+    routes: [
+      { id: 'agent', mentionName: 'orion-agent', sessionId: 'session-main', triggerPattern: pattern },
+      { id: 'wizard', mentionName: 'orion-wizard', sessionId: 'session-wizard', triggerPattern: pattern },
+    ],
+  } })
+  t.dsh.addSession('session-wizard')
+  try {
+    const single = t.server.post({ message: '!ask before' })
+    await finalReply(t, single.id)
+    assert.equal(t.botPosts().filter((reply) => reply.root_id === single.id).length, 1)
+    await t.update({ routeToAllMatches: true })
+    assert.equal(t.server.state.sockets.size, 1, 'a trigger setting update must not reconnect')
+    const both = t.server.post({ message: '!ask after' })
+    await finalReplies(t, both.id, 2)
+    assert.equal(t.botPosts().filter((reply) => reply.root_id === both.id).length, 2)
+    assert.equal(t.dsh.prompts[0].sessionId, 'session-main')
+    assert.deepEqual(t.dsh.prompts.slice(1).map((prompt) => prompt.sessionId).sort(), ['session-main', 'session-wizard'])
+  } finally {
+    await t.close()
+  }
+})
+
+test('independent route triggers ignore unrelated mentions and isolate invalid regexes', async () => {
+  const t = await setup({ config: {
+    routes: [
+      { id: 'agent', mentionName: 'orion-agent', sessionId: 'session-main', triggerOnMention: false, triggerOnDirectMessage: false, triggerPattern: '(' },
+      { id: 'wizard', mentionName: 'orion-wizard', sessionId: 'session-wizard', triggerOnDirectMessage: true, triggerPattern: '^!wizard\\s+(?<prompt>.+)' },
+    ],
+  } })
+  t.dsh.addSession('session-wizard')
+  try {
+    t.server.post({ message: '@dsh-bot do not answer' })
+    await sleep(100)
+    assert.equal(t.dsh.prompts.length, 0)
+    const mention = t.server.post({ message: '@orion-wizard hello' })
+    assert.equal(await finalReply(t, mention.id), '@alice echo: @alice: hello')
+    const pattern = t.server.post({ message: '!wizard build the docs' })
+    assert.equal(await finalReply(t, pattern.id), '@alice echo: @alice: build the docs')
+    const dm = t.server.post({ message: 'hello privately', channel: 'dm-1', channel_type: 'D', channel_name: 'bot-user-id__user-alice' })
+    assert.equal(await finalReply(t, dm.id), '@alice echo: @alice: hello privately')
+    assert.deepEqual(t.dsh.prompts.map((prompt) => prompt.sessionId), ['session-wizard', 'session-wizard', 'session-wizard'])
+    const status = (await t.call('status')).body.connections[0]
+    assert.match(status.routes[0].patternError, /invalid triggerPattern/)
+    assert.equal(status.routes[1].patternError, undefined)
+  } finally {
+    await t.close()
+  }
+})
+
+test('legacy environment regex keeps a follow-up in the route that answered its thread', async () => {
+  const t = await setup({ config: {
+    followThreads: true,
+    triggerPattern: '^!ask\\s+(?<prompt>.+)',
+    routes: [
+      { id: 'agent', mentionName: 'orion-agent', sessionId: 'session-main' },
+      { id: 'wizard', mentionName: 'orion-wizard', sessionId: 'session-wizard' },
+    ],
+  } })
+  t.dsh.addSession('session-wizard')
+  try {
+    const root = t.server.post({ message: '@orion-wizard start this discussion' })
+    await finalReply(t, root.id)
+    t.server.post({ message: '!ask continue in this workspace', root_id: root.id })
+    await finalReplies(t, root.id, 2)
+    assert.deepEqual(t.dsh.prompts.map((prompt) => prompt.sessionId), ['session-wizard', 'session-wizard'])
+    assert.match(t.dsh.prompts[1].text, /@alice: continue in this workspace$/)
+    const outside = t.server.post({ message: '!ask a new question' })
+    await finalReply(t, outside.id)
+    assert.equal(t.dsh.prompts[2].sessionId, 'session-main', 'outside a thread the first route still handles legacy regex matches')
   } finally {
     await t.close()
   }

@@ -1,6 +1,6 @@
 {
   "name": "dsh-mattermost",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Mattermost bridge for DeepSeek Harness: route mentions to DSH workspaces and sessions, then reply in Mattermost threads.",
   "license": "MIT",
   "repository": {

@@ -24,7 +24,7 @@ Mattermost thread ◀──REST patch/post── final assistant answer (split w
 ```
 
 1. Each enabled environment signs in with its bot token (`GET /api/v4/users/me`) and keeps the event WebSocket open (token challenge, keep-alive pings, automatic reconnect with back-off).
-2. A post is handled when it addresses the bot (see [Triggers](#triggers)) and passes the environment's channel and user filters. The `@name` it uses selects the **route** — the DSH workspace and session mode that answer. Own posts, system messages, other bots and webhooks are ignored.
+2. A post is handled when it matches a route (see [Per-route triggers](#per-route-triggers)) and passes that route's channel and user filters. An explicit `@name` always selects its route — there is no mention toggle. Own posts, system messages, other bots and webhooks are ignored.
 3. Requests for the same shared session (or the same thread in thread mode) run **one after another**; different routes, threads and new sessions run **in parallel**, up to `maxConcurrent`. A request that has to wait gets a *queued* notice; when it starts the same post becomes *Processing your request…*, and finally it is replaced by the answer — one post per request, like mm-agent-bridge.
 4. The text sent to DSH is a short header (`[Mattermost] Message from @alice in ~town-square …`), the earlier posts of the thread when the request is a thread reply, and `@alice: <request>`. It enters the session exactly like a prompt typed in the DSH window, so you can watch the conversation live in DSH.
 5. The plugin waits for the DSH turn that consumed *that* prompt (matched by request id, not by "the agent became idle") and posts the turn's final assistant message. Failed, cancelled, blocked or timed-out turns get an explanatory reply instead.
@@ -70,9 +70,9 @@ Sidebar → **Plugins** → *Mattermost Bridge*. Everything is editable there an
 | Server URL | e.g. `https://mattermost.example.com` (`https://` assumed without a scheme; subpath deployments work). |
 | Access token | Stored as a secret: never shown again, never sent to the page. Leave empty to keep the saved one. |
 | **Test connection** | Signs in with the entered (or saved) token and authenticates the WebSocket; shows the bot account or the error. |
-| **Routes** | `@name` → workspace directory → session mode (→ session). See below. |
-| Triggers | @mentions of route names, direct messages, follow-ups in answered threads, server mention list, a custom regular expression + flags. |
-| Scope | Channel filter (ids, names or display names) and user allow-list. |
+| **Routes** | Click a route header to expand its settings (`@name` → workspace → session). Every route answers its `@name` mentions; configure its own channels, allowed users, DM, follow-up, server-mention and regex options. Newly added and duplicated routes open automatically; Duplicate gives the copy a unique name without carrying over its pinned session. |
+| Deliver to every matching route | Off by default: one best match answers. On: every matching route independently handles the message and labels its reply with `[@route-name]`. |
+| Scope | Set channels (ids, names or display names) and allowed users on each route. Legacy environment-level values remain fallback defaults for routes that omit these fields. |
 | Online / offline notice | Greeting / goodbye posts in a channel. |
 | Reconnect / Remove | Per environment. |
 
@@ -84,26 +84,29 @@ One environment (one bot token) can have several routes. Each route has:
 
 | Field | Meaning |
 |---|---|
-| `@name` | The mention that selects the route, e.g. `orion-agent`. Empty: the bot account username. It does not have to be a real Mattermost user — the bot sees every post in its channels. |
+| `@name` | The mention that always selects the route, e.g. `orion-agent` (no on/off toggle). Empty: the bot account username. It does not have to be a real Mattermost user — the bot sees every post in its channels. |
+| Channels / allowed users | This route's channel filter (ids, names or display names) and username allow-list. Empty lists allow all; when a field is omitted in YAML, the legacy environment-level value is inherited. |
 | Workspace directory | Select a workspace registered in the current DSH environment (its skills, `AGENTS.md`, MCP servers apply). The dropdown shows each title and full path; empty uses the shared default workspace. Refresh reloads DSH's workspace list. A previously configured path no longer in the list remains visible and unchanged until you select another; manually specified directories in YAML can still be registered on first use. |
 | Session mode | **One session** — every request in the same session; **new session per thread** — the first request of a Mattermost thread creates a session and follow-ups in that thread reuse it (also after a restart); **new session per message** — every request gets a fresh session. |
 | Session (one-session mode) | Pick the session from the list (sessions of that workspace), or *Automatic*: the session bound with `/mattermost bind`, otherwise one created in the workspace on the first message (titled *Mattermost · @name*) and remembered. A deleted bound session is replaced automatically. |
 
-The **first route** also takes direct messages without a mention, pattern matches and server-side mentions; a follow-up in a thread (with *follow-ups need no new mention*) stays with the route that answered the thread. An environment without routes behaves like one route: `@<bot username>` in one shared session.
+Existing route cards start **collapsed**; click the route header to expand or collapse (there is no separate Expand button). Adding or duplicating a route opens it immediately for editing. **Duplicate** copies the workspace, session mode, scope and optional triggers but creates a unique id and `@name` and clears the pinned session (so the copy cannot accidentally use the source route's session). The first route listens to DMs by default; later routes do not unless enabled. An environment without routes behaves like one implicit route: `@<bot username>` in one shared session; its legacy mention setting is still honored. Other legacy environment-level triggers are inherited by existing routes until route-specific settings are saved, preserving the thread's workspace when an old regex also matches.
+
+With **Deliver to every matching route** off (default), only one route answers: explicit @mention (earliest in the message), then DM, server mention list, regex and finally a thread follow-up. For equal-priority non-explicit triggers, the route that handled the thread wins, then configuration order. With the switch on, **each route independently evaluates its triggers** and every match answers once, with `[@route-name]` in the reply. Thus a DM that explicitly mentions another route can reach both the DM-enabled route and the mentioned route. Follow-ups in a thread can reach every route that answered it, if its own follow-up trigger is enabled.
 
 Created sessions are titled *Mattermost · @name* (one-session mode) or *Mattermost · @name · \<first words of the request\>* (thread / per-message modes), so they are easy to find — and to archive — in the DSH sidebar.
 
-### Triggers
+### Per-route triggers
 
-| Trigger | Default |
+| Trigger on each route | Default |
 |---|---|
-| `@mention` of a route name (whole word: `@orion-agent-dev` does not trigger `@orion-agent`) | on |
-| Any direct message to the bot (first route, unless it mentions another route) | on |
-| A post matching your regular expression (first route); a named group `prompt` selects the text sent to DSH, e.g. `^!ask\s+(?<prompt>[\s\S]+)` | off |
-| Later posts in a thread the bot already answered, without a new mention (the thread's route) | off |
-| The server-side mention list (also contains `@channel`/`@all` fan-out) | off |
+| `@mention` of that route's name (whole word: `@orion-agent-dev` does not trigger `@orion-agent`) | always on for explicit routes; no toggle |
+| Answer bot DMs without a matching route mention | first route on; later routes off |
+| Answer follow-ups in a thread this route already answered, without another mention | off |
+| Trust the server-side bot mention list (includes `@channel`/`@all` fan-out) | off |
+| Custom regular expression and flags, **side by side** in the form | empty pattern, flags `i` (case-insensitive) |
 
-`ignoreBots` (shared, default on) skips bot and webhook posts.
+For example, `^!ask\s+(?<prompt>[\s\S]+)` with flags `i` matches `!ASK summarize this` and sends only `summarize this` to this route's DSH session. The named `prompt` capture removes the `!ask` prefix; `[\s\S]+` also accepts multi-line requests. With multiple regex matches, the one-route priority or all-matches switch decides whether one or every matching route answers. Stateful `g`/`y` flags are ignored. Each route's channel/user filters apply to that route; omitted values inherit the legacy environment settings, while explicit empty lists allow every channel/user. Shared `ignoreBots` (on by default) still applies.
 
 ## Configure in cordis.patch.yml (alternative)
 
@@ -118,16 +121,25 @@ The page writes your profile's `cordis.patch.yml` (`~/.dsh/profiles/<profile>/co
         name: Company
         serverUrl: https://mattermost.example.com
         token: <bot access token>      # or: !!js process.env.MM_TOKEN
-        allowedUsers: [alice, bob]
+        allowedUsers: [alice, bob]    # legacy fallback for routes omitting allowedUsers
+        channels: [town-square]       # legacy fallback for routes omitting channels
+        routeToAllMatches: false      # true: every matching route answers once
         routes:
           - id: orion-agent
             mentionName: orion-agent
             workspace: /path/to/orion-agent
             sessionMode: shared        # shared | thread | new
+            channels: [town-square, dev] # this route overrides environment channels
+            allowedUsers: []          # explicitly allow everyone on this route
+            triggerOnDirectMessage: true
+            triggerPattern: '^!ask\s+(?<prompt>[\s\S]+)'
+            triggerPatternFlags: i
           - id: orion-wizard
             mentionName: orion-wizard
             workspace: /path/to/orion-wizard
             sessionMode: new
+            triggerOnDirectMessage: false
+            followThreads: true
       - id: local
         name: Local test
         serverUrl: http://localhost:8065
@@ -147,13 +159,10 @@ Per environment (`connections[]`):
 | `name` | — | Display name. |
 | `enabled` | `true` | Connect this environment. |
 | `serverUrl`, `token` | — | Server and bot (or personal) access token. |
-| `routes` | `[]` | See the route fields below. Empty: one implicit route (`mentionName`, `sessionId`). |
-| `mentionName`, `sessionId` | bot username, — | Only without routes: the name to listen for and a pinned session. |
-| `triggerOnMention` / `triggerOnDirectMessage` | `true` / `true` | See [Triggers](#triggers). |
-| `followThreads` | `false` | Answer follow-ups in threads the bot already answered. |
-| `matchMentionsList` | `false` | Trust the server's mention list too. |
-| `triggerPattern` / `triggerPatternFlags` | — / `i` | Custom match. |
-| `channels` / `allowedUsers` | `[]` (all) | Channel filter / user allow-list. |
+| `routes` | `[]` | See route fields below. Empty: one implicit route (`mentionName`, `sessionId`). |
+| `routeToAllMatches` | `false` | Off: one best-matching route; on: deliver to every matching route, one labeled reply each. |
+| `mentionName`, `sessionId`, legacy trigger fields | — | Compatibility only for older profiles; the implicit no-routes route still honors legacy `triggerOnMention`, but explicit routes always answer their `@name` mentions. |
+| `channels` / `allowedUsers` | `[]` (all) | Legacy fallback channel filter / user allow-list, used only when a route omits the corresponding field. |
 | `greetingEnabled`, `greetingChannelId`, `greetingMessage`, `goodbyeMessage` | off | Post when the environment connects / stops. |
 
 Per route (`connections[].routes[]`):
@@ -165,6 +174,10 @@ Per route (`connections[].routes[]`):
 | `workspace` | shared `workspace` | Workspace directory whose sessions answer. |
 | `sessionMode` | `shared` | `shared`: one session; `thread`: a new session per thread, reused for follow-ups; `new`: a new session per message. |
 | `sessionId` | — | `shared` mode: the pinned session (else `/mattermost bind`, else created automatically). |
+| `channels` / `allowedUsers` | inherited from environment if omitted | Per-route channel filter / username allow-list; an explicit `[]` allows all for that route, even when an environment fallback is set. |
+| `triggerOnDirectMessage` | first route `true`, later routes `false` | Answer bot DMs through this route. |
+| `followThreads` / `matchMentionsList` | `false` / `false` | Answer this route's thread follow-ups / trust server-side bot mentions. |
+| `triggerPattern` / `triggerPatternFlags` | — / `i` | This route's regex and flags; named group `prompt` selects the question. |
 
 Shared:
 
@@ -215,8 +228,8 @@ Run it in any DSH session. `[target]` is an environment (`local`), a route (`@or
 | `MM_URL`, `MM_PORT`, `MM_SCHEME` | environment *Server URL* (e.g. `https://host:443`) |
 | `MM_TOKEN` | environment *Access token* |
 | `BOT_MENTION_NAME` | a route's *@name* (add one route per name) |
-| `MENTION_BY_ID` | environment *Server mention list* |
-| `MM_USERNAME_WHITELIST` | environment *Only these users* |
+| `MENTION_BY_ID` | route *Server mention list* |
+| `MM_USERNAME_WHITELIST` | route *Only these users* (legacy environment-level fallback also supported) |
 | `OPENCODE_SESSION_ID` / `COPILOT_SESSION_ID` | a route's *Session* (one-session mode), or `/mattermost bind` |
 | `GREETING_*`, `GOODBYE_MESSAGE` | environment *Online / offline notice* |
 | `QUEUE_MAX_SIZE` | *Queue limit* |
@@ -270,12 +283,13 @@ Log in at http://localhost:8065 as `alice` and open **DSH Test → Town Square**
 | 7 | Ask `@orion-agent` twice and `@orion-wizard` twice | `@orion-agent` reuses one session *Mattermost · @orion-agent*; `@orion-wizard` creates a new session each time. |
 | 8 | Switch a route to *New session per thread*; ask, then follow up in the same thread | The follow-up continues in the thread's session; a new thread gets a new one. |
 | 9 | Post to both routes at the same moment | Both are answered without waiting for each other (`/mattermost status` shows 2 running). |
-| 10 | Set *Only these users* to `alice`; post as `carol` | *You do not have permission to use this agent.* |
-| 11 | Set *Only these channels* to `town-square`; post in ~off-topic | No reply. |
-| 12 | Set the custom match to `^!ask\s+(?<prompt>[\s\S]+)`; post `!ask what is 2+2` | Answered (first route) without a mention. |
-| 13 | Set *Maximum post length* to 1000; ask for the numbers 1–300, one per line | The answer arrives in several posts. |
-| 14 | Run `docker restart dsh-mattermost-mm` | The card shows *Reconnecting*, then *Connected* again within about a minute. |
-| 15 | Run `/mattermost status` in a DSH session | Every route with its workspace, session mode and session, and the last request. |
+| 10 | On one route, set *Only these users* to `alice`; post to that route as `carol` | *You do not have permission to use this agent.* Other routes keep their own allow-lists. |
+| 11 | On one route, set *Only these channels* to `town-square`; mention it in ~off-topic | No reply from that route; another route may still answer if its scope allows it. |
+| 12 | Set `^!wizard\s+(?<prompt>[\s\S]+)` with flags `i` **on the @orion-wizard route**; post `!WIZARD what is 2+2` | Answered by the wizard workspace without a mention. |
+| 13 | Enable *Deliver to every matching route*, set `^!ask\s+(?<prompt>.+)` on both routes and post `!ask hello` | One thread receives two labeled replies (`[@orion-agent]`, `[@orion-wizard]`); switching it off produces only one. |
+| 14 | Set *Maximum post length* to 1000; ask for the numbers 1–300, one per line | The answer arrives in several posts. |
+| 15 | Run `docker restart dsh-mattermost-mm` | The card shows *Reconnecting*, then *Connected* again within about a minute. |
+| 16 | Run `/mattermost status` in a DSH session | Every route with its workspace, session mode and session, and the last request. |
 
 `pnpm run mm:post` does the posting from a terminal: it posts as a test user and waits for the bot's final reply (exit code 2 when none comes).
 

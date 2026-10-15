@@ -52,6 +52,48 @@ test('routes: keys, defaults, and the implicit route of an environment without r
   assert.equal(routeLabel({ mentionName: '' }, 'dsh-bot'), '@dsh-bot')
 })
 
+test('legacy environment triggers migrate to routes until route triggers are explicitly configured', () => {
+  const old = normalizeConnections([{
+    id: 'local', triggerOnMention: false, triggerOnDirectMessage: false, followThreads: true,
+    matchMentionsList: true, triggerPattern: '^!ask\\s+(?<prompt>.+)', triggerPatternFlags: 'im',
+    routes: [{ id: 'agent', mentionName: 'orion-agent' }, { id: 'wizard', mentionName: 'orion-wizard' }],
+  }])[0]
+  assert.deepEqual(old.routes.map((r) => [r.triggerOnMention, r.triggerOnDirectMessage, r.followThreads, r.matchMentionsList, r.triggerPattern, r.triggerPatternFlags]), [
+    [true, false, true, true, '^!ask\\s+(?<prompt>.+)', 'im'],
+    [true, false, true, true, '^!ask\\s+(?<prompt>.+)', 'im'],
+  ])
+  const edited = normalizeConnections([{
+    ...old,
+    routes: [
+      { id: 'agent', mentionName: 'orion-agent', triggerPattern: '', triggerOnMention: true, triggerOnDirectMessage: true },
+      { id: 'wizard', mentionName: 'orion-wizard' },
+    ],
+  }])[0]
+  assert.equal(edited.routes[0].triggerPattern, '', 'explicit empty pattern overrides old environment pattern')
+  assert.equal(edited.routes[0].triggerOnMention, true)
+  assert.deepEqual([edited.routes[1].triggerOnMention, edited.routes[1].triggerOnDirectMessage, edited.routes[1].followThreads], [true, false, false], 'partial new route configuration does not inherit legacy environment triggers')
+  const implicit = normalizeConnections([{ triggerOnDirectMessage: false, triggerPattern: '^!ask' }])[0].routes[0]
+  assert.equal(implicit.key, '')
+  assert.equal(implicit.triggerOnDirectMessage, false)
+  assert.equal(implicit.triggerPattern, '^!ask')
+})
+
+test('route scope overrides legacy environment lists, while omitted fields inherit them', () => {
+  const [connection] = normalizeConnections([{
+    channels: ['dev'], allowedUsers: ['alice'],
+    routes: [
+      { id: 'inherited', mentionName: 'agent' },
+      { id: 'open', mentionName: 'open', channels: [], allowedUsers: [] },
+      { id: 'custom', mentionName: 'custom', channels: ['sales'], allowedUsers: ['bob'], triggerOnMention: false },
+    ],
+  }])
+  assert.deepEqual(connection.routes.map((route) => [route.channels, route.allowedUsers, route.triggerOnMention]), [
+    [['dev'], ['alice'], true], [[], [], true], [['sales'], ['bob'], true],
+  ])
+  const [implicit] = normalizeConnections([{ channels: ['dev'], allowedUsers: ['alice'], triggerOnMention: false }])
+  assert.deepEqual([implicit.routes[0].channels, implicit.routes[0].allowedUsers, implicit.routes[0].triggerOnMention], [['dev'], ['alice'], false])
+})
+
 test('mergeSettings overlays one environment on the shared settings', () => {
   const [connection] = normalizeConnections([{ id: 'p', name: 'Prod', serverUrl: 'https://x', token: 't', greetingEnabled: true, greetingChannelId: 'c1', routes: [{ mentionName: 'a' }] }])
   const merged = mergeSettings({ sessionTitle: ' Mattermost ', queueMaxSize: 3, maxConcurrent: 0, messages: { queued: 'Q' } }, connection)

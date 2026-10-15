@@ -3,8 +3,10 @@
 #
 # Configure it on that page: add one "environment" per Mattermost server /
 # bot account, test the connection, add routes (@name → DSH workspace →
-# session mode), and set triggers, scope and shared behavior. Saving applies
-# live.
+# session mode → per-route scope and optional triggers), and set the optional
+# all-matches switch and shared behavior. Each route always answers its @name;
+# click its header to edit (new/duplicated routes open automatically).
+# Saving applies live.
 #
 # Or override this row from your profile's cordis.patch.yml (a patch replaces
 # the whole `config`, so restate every field you set). Commented values show
@@ -18,23 +20,27 @@
 #         name: Company
 #         serverUrl: https://mattermost.example.com
 #         token: <bot access token>           # or: !!js process.env.MM_TOKEN
+#         # channels: [town-square]          # legacy fallback when a route omits channels
+#         # allowedUsers: [alice, bob]       # legacy fallback when a route omits allowedUsers
 #         routes:                             # empty: @<bot username> in one shared session
 #           - id: orion-agent
-#             mentionName: orion-agent        # default: the bot account username
+#             mentionName: orion-agent        # always answers @orion-agent (no mention toggle)
 #             workspace: /path/to/orion-agent # default: the shared `workspace` below
 #             sessionMode: shared             # shared | thread | new
 #             # sessionId: <DSH session id>   # shared: empty = /mattermost bind, else auto-created
+#             channels: [town-square, dev]    # overrides legacy environment channels
+#             allowedUsers: []                # explicit empty list allows everyone on this route
+#             triggerOnDirectMessage: true    # first route default; later routes default false
+#             triggerPattern: '^!ask\s+(?<prompt>[\s\S]+)'
+#             triggerPatternFlags: i          # case-insensitive
 #           - id: orion-wizard
 #             mentionName: orion-wizard
 #             workspace: /path/to/orion-wizard
 #             sessionMode: new
+#             followThreads: true
 #         # enabled: true
-#         # triggerOnMention: true
-#         # triggerOnDirectMessage: true      # direct messages go to the first route
-#         # followThreads: false
-#         # triggerPattern: '^!ask\s+(?<prompt>[\s\S]+)'
-#         # channels: [town-square]           # empty: every channel the bot joined
-#         # allowedUsers: [alice, bob]        # empty: everyone
+#         # routeToAllMatches: false          # true = all matching routes each answer once
+#         # triggerOnMention: false           # legacy implicit (no-routes) route only
 #         # greetingEnabled: false
 #         # greetingChannelId: <channel id>
 #     # autoCreateSession: true

@@ -39,6 +39,13 @@ export const Route = Schema.object({
   workspace: Schema.string().description('DSH workspace directory whose sessions answer (its skills and instructions apply). Empty: the shared workspace setting, else the first workspace.'),
   sessionMode: Schema.union(SESSION_MODES).default('shared').description('shared: one session answers every request; thread: a new session per Mattermost thread, reused for its follow-ups; new: a new session for every request.'),
   sessionId: Schema.string().description('shared mode: the session that answers. Empty: the session bound with `/mattermost bind`, or one created in the workspace.'),
+  channels: Schema.array(Schema.string()).default(undefined).description('Channels this route listens to (id, name or display name). Empty: all; omitted: inherit the legacy environment filter. DMs are independent.'),
+  allowedUsers: Schema.array(Schema.string()).default(undefined).description('Usernames allowed to use this route. Empty: everyone; omitted: inherit the legacy environment filter.'),
+  triggerOnDirectMessage: Schema.boolean().description('Answer direct messages without a matching route mention. The first route is enabled by default; other routes are off by default.'),
+  followThreads: Schema.boolean().description('Answer follow-ups in a thread previously handled by this route, without another mention.'),
+  matchMentionsList: Schema.boolean().description('Trust the server-side bot mention list, including @channel/@all fan-out.'),
+  triggerPattern: Schema.string().description('Regular expression matching posts for this route. Named group `prompt` becomes the DSH question.'),
+  triggerPatternFlags: Schema.string().description('Flags for this route’s regular expression (i ignores case; g/y are ignored).'),
 })
 
 /** One Mattermost environment: a server, a bot account, and how it is used. */
@@ -48,17 +55,18 @@ export const Connection = Schema.object({
   enabled: Schema.boolean().default(true).description('Connect this environment.'),
   serverUrl: Schema.string().description('Mattermost server URL, e.g. https://mattermost.example.com (https is assumed without a scheme).'),
   token: Schema.string().role('secret').description('Access token of the bot account (or a personal access token).'),
-  routes: Schema.array(Route).default([]).description('Routes by @mention: which workspace answers and how sessions are used. The first route also takes direct messages, pattern matches and server-side mentions. Empty: the bot username, answered in one shared session.'),
-  sessionId: Schema.string().description('Without routes: the DSH session that answers.'),
-  mentionName: Schema.string().description('Without routes: the username to listen for, without @. Defaults to the bot account username.'),
-  triggerOnMention: Schema.boolean().default(true).description('Answer posts that @mention a route.'),
-  triggerOnDirectMessage: Schema.boolean().default(true).description('Answer every direct message to the bot (first route unless it mentions another).'),
-  followThreads: Schema.boolean().default(false).description('Also answer later posts in a thread the bot already answered, without a new mention.'),
-  matchMentionsList: Schema.boolean().default(false).description('Also trust the server-side mention list (it includes @channel/@all fan-out).'),
-  triggerPattern: Schema.string().description('Regular expression; a matching post is answered by the first route. A named group `prompt` selects the text sent to DSH.'),
-  triggerPatternFlags: Schema.string().default('i').description('Flags for triggerPattern.'),
-  channels: Schema.array(Schema.string()).default([]).description('Only listen in these channels (id, name, or display name). Empty: every channel the bot is a member of.'),
-  allowedUsers: Schema.array(Schema.string()).default([]).description('Only these usernames may use the bot. Empty: everyone.'),
+  routes: Schema.array(Route).default([]).description('Routes by @mention, workspace, session mode, and route-specific triggers. Empty: one implicit route with the bot username and legacy environment triggers.'),
+  routeToAllMatches: Schema.boolean().default(false).description('Off: deliver a post to one best-matching route. On: deliver it once to every matching route; each posts an identifiable reply.'),
+  sessionId: Schema.string().description('Legacy fallback when no routes are configured: the DSH session that answers.'),
+  mentionName: Schema.string().description('Legacy fallback when no routes are configured: the username to listen for without @.'),
+  triggerOnMention: Schema.boolean().default(true).description('Legacy trigger fallback for pre-route configs; edit each route’s triggers in the Plugins page.'),
+  triggerOnDirectMessage: Schema.boolean().default(true).description('Legacy trigger fallback for pre-route configs; edit each route’s triggers in the Plugins page.'),
+  followThreads: Schema.boolean().default(false).description('Legacy trigger fallback for pre-route configs; edit each route’s triggers in the Plugins page.'),
+  matchMentionsList: Schema.boolean().default(false).description('Legacy trigger fallback for pre-route configs; edit each route’s triggers in the Plugins page.'),
+  triggerPattern: Schema.string().description('Legacy trigger fallback for pre-route configs; edit each route’s triggers in the Plugins page.'),
+  triggerPatternFlags: Schema.string().default('i').description('Legacy trigger fallback for pre-route configs; edit each route’s triggers in the Plugins page.'),
+  channels: Schema.array(Schema.string()).default([]).description('Legacy default channel filter for routes without their own channels; also applies to the implicit route.'),
+  allowedUsers: Schema.array(Schema.string()).default([]).description('Legacy default user allow-list for routes without their own allowedUsers; also applies to the implicit route.'),
   greetingEnabled: Schema.boolean().default(false).description('Post a greeting when the environment connects and a goodbye when it stops.'),
   greetingChannelId: Schema.string().description('Channel id that receives the greeting and goodbye.'),
   greetingMessage: Schema.string().description('Greeting text; defaults to an "online and ready" notice that names the mentions.'),
@@ -287,6 +295,7 @@ export function apply(ctx, config) {
         enabled: connection.enabled,
         serverUrl: connection.serverUrl,
         hasToken: connection.token !== '',
+        routeToAllMatches: connection.routeToAllMatches,
         state: status?.connection.state ?? (connection.enabled ? 'starting' : 'disabled'),
         detail: status?.connection.detail,
         since: status?.connection.since,
@@ -553,6 +562,7 @@ function formatStatus(items, here, stateFile) {
     const who = item.bot ? ` as @${item.bot}` : ''
     lines.push(`▸ ${item.name} [${item.key}] — ${STATE_TEXT[item.state] ?? item.state}${who}${item.detail && item.state !== 'connected' ? ` (${item.detail})` : ''}`)
     if (item.serverUrl) lines.push(`  Server: ${item.serverUrl}`)
+    lines.push(`  Dispatch: ${item.routeToAllMatches ? 'every matching route (labeled replies)' : 'one best-matching route'}`)
     for (const route of item.routes ?? []) {
       const target = route.target ?? {}
       const session = target.id ? `${target.id}${target.title ? ` "${target.title}"` : ''}${target.id === here ? ' (this session)' : ''}` : ''
