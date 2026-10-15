@@ -76,7 +76,7 @@ pnpm install          # 在本地解析 @deepseek-ai/schemastery（在 DSH 下�
 | 上线/下线通知 | 在指定频道发送上线/下线消息。 |
 | 重新连接 / 删除此环境 | 针对单个环境。 |
 
-**通用设置**（对所有环境生效）：自动新建会话、默认工作区目录、会话标题前缀、同时处理的请求数（`maxConcurrent`）、回复内容（最后一条 / 全部助手消息）、回复超时、消息串上下文条数、排队上限、单条帖子最大长度、回复时 @提问者、“正在输入”提示、附加主机名、忽略机器人消息、提示首行。**回复文案**可替换机器人发送的所有提示语；**诊断**可设置调试日志文件和状态文件。
+**通用设置**（对所有环境生效）：自动新建会话、默认工作区目录（下拉选项来自当前 DSH 环境已登记的工作区）、会话标题前缀、同时处理的请求数（`maxConcurrent`）、回复内容（最后一条 / 全部助手消息）、回复超时、消息串上下文条数、排队上限、单条帖子最大长度、回复时 @提问者、“正在输入”提示、附加主机名、忽略机器人消息、提示首行。**回复文案**可替换机器人发送的所有提示语；**诊断**可设置调试日志文件和状态文件。
 
 ### 路由：由哪个工作区、哪个会话回答
 
@@ -85,7 +85,7 @@ pnpm install          # 在本地解析 @deepseek-ai/schemastery（在 DSH 下�
 | 项目 | 说明 |
 |---|---|
 | `@名称` | 选中这条路由的提及，如 `orion-agent`。留空时使用机器人账号的用户名。不必是 Mattermost 中真实存在的用户——机器人能看到所在频道的每条消息。 |
-| 工作区目录 | 负责回答的 DSH 工作区（使用该工作区的技能、`AGENTS.md`、MCP 服务）。输入框会提示你已有的 DSH 工作区；还不是工作区的目录会在第一次使用时自动添加。留空时使用通用设置中的默认工作区。 |
+| 工作区目录 | 从当前 DSH 已登记的工作区下拉选择（显示名称和完整路径，使用该工作区的技能、`AGENTS.md`、MCP 服务）；可点“刷新”重新获取。留空时继承通用设置中的默认工作区。若旧配置路径已不在列表中，它仍显示并保持原值，直到你改选；手动在 YAML 中指定的现有目录依然可在首次使用时自动登记。 |
 | 会话模式 | **同一个会话**——所有请求在同一个会话中处理；**每个消息串一个新会话**——消息串中第一次提问时新建会话，串内追问继续使用它（重启后仍然有效）；**每条消息一个新会话**——每个请求都新建会话。 |
 | 会话（同一个会话模式） | 从列表中选择（列出该工作区的会话），或选“自动”：使用 `/mattermost bind` 绑定的会话，否则在第一条消息时于该工作区新建（标题 *Mattermost · @名称*）并记住。绑定的会话被删除后会自动替换。 |
 
@@ -257,17 +257,17 @@ CI 流水线（`.github/workflows/ci.yml`）在推送和 PR 时运行 `pnpm run 
 
 首版发布后，包所有者须在 **npmjs.com → dsh-mattermost → Settings → Trusted Publishers** 添加 GitHub Actions 发布者：owner `lastorder`、repository `dsh-mattermost`、workflow 文件名 **`publish.yml`**，允许直接 `npm publish`（而非只暂存）。无须配置 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。设置后需在两天内完成首次可信发布，否则按 [npm 文档](https://docs.npmjs.com/trusted-publishers/) 重新配置。后续从公开 GitHub 仓库发布的版本会自动带 provenance；本机首版不会补发 provenance。
 
-后续发版先递增版本、提交并推送 tag，再创建 GitHub Release（以下 `0.1.1` 换成当次版本）：
+后续发版先递增版本、提交并推送 tag，再创建 GitHub Release（以下 `0.1.2` 换成当次版本）：
 
 ```sh
 npm version patch --no-git-tag-version
 pnpm install --lockfile-only
 pnpm run verify
 git add package.json pnpm-lock.yaml
-git commit -m "release: v0.1.1"
-git tag v0.1.1
-git push origin main v0.1.1
-gh release create v0.1.1 --verify-tag --title "v0.1.1" --generate-notes
+git commit -m "release: v0.1.2"
+git tag v0.1.2
+git push origin main v0.1.2
+gh release create v0.1.2 --verify-tag --title "v0.1.2" --generate-notes
 ```
 
 然后检查 workflow 和 `npm view dsh-mattermost version`。**不要**为本机已发布的 `v0.1.0` 创建 GitHub Release，否则流水线会尝试重复发布同一版本。

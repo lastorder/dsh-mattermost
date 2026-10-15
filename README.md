@@ -76,7 +76,7 @@ Sidebar → **Plugins** → *Mattermost Bridge*. Everything is editable there an
 | Online / offline notice | Greeting / goodbye posts in a channel. |
 | Reconnect / Remove | Per environment. |
 
-**Shared settings** (all environments): automatic session creation, default workspace directory, session title prefix, requests at the same time (`maxConcurrent`), reply content (last vs. every assistant message), reply timeout, thread context size, queue limit, maximum post length, @sender prefix, typing indicator, host suffix, ignoring bots, and the prompt's first line. **Reply texts** lets you replace every text the bot posts; **Diagnostics** sets a debug log file and the state file.
+**Shared settings** (all environments): automatic session creation, default workspace directory (a dropdown populated from workspaces registered in the current DSH environment), session title prefix, requests at the same time (`maxConcurrent`), reply content (last vs. every assistant message), reply timeout, thread context size, queue limit, maximum post length, @sender prefix, typing indicator, host suffix, ignoring bots, and the prompt's first line. **Reply texts** lets you replace every text the bot posts; **Diagnostics** sets a debug log file and the state file.
 
 ### Routes: which workspace and session answer
 
@@ -85,7 +85,7 @@ One environment (one bot token) can have several routes. Each route has:
 | Field | Meaning |
 |---|---|
 | `@name` | The mention that selects the route, e.g. `orion-agent`. Empty: the bot account username. It does not have to be a real Mattermost user — the bot sees every post in its channels. |
-| Workspace directory | The DSH workspace that answers (its skills, `AGENTS.md`, MCP servers apply). The field suggests your DSH workspaces; a directory that is not a workspace yet is added on first use. Empty: the shared default workspace. |
+| Workspace directory | Select a workspace registered in the current DSH environment (its skills, `AGENTS.md`, MCP servers apply). The dropdown shows each title and full path; empty uses the shared default workspace. Refresh reloads DSH's workspace list. A previously configured path no longer in the list remains visible and unchanged until you select another; manually specified directories in YAML can still be registered on first use. |
 | Session mode | **One session** — every request in the same session; **new session per thread** — the first request of a Mattermost thread creates a session and follow-ups in that thread reuse it (also after a restart); **new session per message** — every request gets a fresh session. |
 | Session (one-session mode) | Pick the session from the list (sessions of that workspace), or *Automatic*: the session bound with `/mattermost bind`, otherwise one created in the workspace on the first message (titled *Mattermost · @name*) and remembered. A deleted bound session is replaced automatically. |
 
@@ -322,17 +322,17 @@ The CI workflow (`.github/workflows/ci.yml`) runs `pnpm run verify` and audits t
 
 After the first release, the package owner must visit **npmjs.com → dsh-mattermost → Settings → Trusted Publishers** and add a GitHub Actions publisher: owner `lastorder`, repository `dsh-mattermost`, workflow filename **`publish.yml`**. Allow direct `npm publish` (rather than stage-only). No `NPM_TOKEN` or `NODE_AUTH_TOKEN` GitHub secret is needed. Complete the first trusted release within two days of adding the publisher, or reconfigure it; see [npm's instructions](https://docs.npmjs.com/trusted-publishers/). Public GitHub releases published via this workflow include npm provenance automatically; the initial local version does not.
 
-For a **later** release, bump the version, commit, tag, push, then publish a non-prerelease GitHub Release (replace `0.1.1` with the new version):
+For a **later** release, bump the version, commit, tag, push, then publish a non-prerelease GitHub Release (replace `0.1.2` with the new version):
 
 ```sh
 npm version patch --no-git-tag-version
 pnpm install --lockfile-only
 pnpm run verify
 git add package.json pnpm-lock.yaml
-git commit -m "release: v0.1.1"
-git tag v0.1.1
-git push origin main v0.1.1
-gh release create v0.1.1 --verify-tag --title "v0.1.1" --generate-notes
+git commit -m "release: v0.1.2"
+git tag v0.1.2
+git push origin main v0.1.2
+gh release create v0.1.2 --verify-tag --title "v0.1.2" --generate-notes
 ```
 
 Check the release workflow and `npm view dsh-mattermost version` afterwards. Do **not** create a GitHub Release for `v0.1.0`: it was published locally already and cannot be re-published by the workflow.

@@ -20,7 +20,7 @@ async function loadClient() {
 }
 
 const client = await loadClient()
-const { toForm, buildOps, validate, newConnection, newRoute, zh, en, SettingsPage, ConnectionCard } = client.testing
+const { toForm, buildOps, validate, newConnection, newRoute, zh, en, SettingsPage, ConnectionCard, SharedSection, WorkspacePicker } = client.testing
 
 /** The Host settings service's path-op semantics (dsh-settings `applyPathOp`), for simulation. */
 function applyOp(section, op) {
@@ -291,13 +291,16 @@ test('an expanded environment shows its routes with workspaces, modes and sessio
       { id: 'ws-a', title: 'orion-agent', path: '/ws/orion-agent' },
       { id: 'ws-w', title: 'orion-wizard', path: '/ws/orion-wizard' },
     ],
-    onChange: noop, onToggle: noop, onRemove: noop, onTest: noop, onReconnect: noop, onRefreshSessions: noop, onRouteChange: noop, onAddRoute: noop, onRemoveRoute: noop,
+    onChange: noop, onToggle: noop, onRemove: noop, onTest: noop, onReconnect: noop, onRefreshSessions: noop, onRefreshWorkspaces: noop, onRouteChange: noop, onAddRoute: noop, onRemoveRoute: noop,
   }))
   assert.ok(html.includes('@orion-agent → orion-agent'))
   assert.ok(html.includes('@orion-wizard → orion-wizard'))
   assert.ok(html.includes(zh.tagShared) && html.includes(zh.tagNew))
   assert.ok(html.includes('Agent work · orion-agent'), 'sessions of the route workspace are offered')
   assert.ok(!html.includes('Elsewhere'), 'sessions of other workspaces are not')
-  assert.ok(html.includes('<datalist'))
+  assert.match(html, /<select id="dshmm-local-agent-workspace"/)
+  assert.ok(html.includes('value="/ws/orion-agent" selected=""'), 'the configured route workspace remains selected')
+  assert.ok(html.includes('orion-wizard — /ws/orion-wizard'), 'each DSH workspace has a distinct title and path')
+  assert.ok(!html.includes('<datalist'), 'workspace selection is a real dropdown, not a free-text input')
   assert.ok(html.includes(zh.addRoute))
 })

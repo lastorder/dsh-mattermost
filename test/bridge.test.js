@@ -870,6 +870,9 @@ test('/mattermost bind, status and the page endpoints know the routes', async ()
       { id: 'ws-agent', title: 'orion-agent', path: '/ws/orion-agent' },
       { id: 'ws-wizard', title: 'orion-wizard', path: '/ws/orion-wizard' },
     ])
+    await workspaces.create('/ws/newly-added')
+    const refreshed = await t.call('workspaces')
+    assert.deepEqual(refreshed.body.workspaces.at(-1), { id: 'ws-3', title: 'newly-added', path: '/ws/newly-added' }, 'refresh reads the current DSH workspace registry')
     assert.match((await t.command('unbind')).text, /Unbound: main\/@orion-agent/)
   } finally {
     await t.close()

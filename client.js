@@ -110,9 +110,15 @@ window.__ModuleLoader__.load({
       routeMention: '@名称',
       routeMentionHint: '不含 @；留空时使用机器人账号的用户名。',
       routeWorkspace: '工作区目录',
-      routeWorkspaceHint: '在这个目录的 DSH 工作区中回答；留空时使用通用设置中的工作区。',
+      routeWorkspaceHint: '从当前 DSH 已配置的工作区中选择；留空时使用通用设置中的默认工作区。',
       routeWorkspaceKnown: 'DSH 工作区：{title}',
-      routeWorkspaceNew: '还不是 DSH 工作区：第一次使用时会自动添加。',
+      routeWorkspaceNew: '原有目录不在当前 DSH 工作区列表中；保留它不会改变配置，也可以改选已配置的工作区。',
+      workspaceFirst: '自动：使用 DSH 的第一个工作区',
+      workspaceInherit: '使用通用设置中的默认工作区',
+      workspaceUnlisted: '当前值未在 DSH 工作区列表中：{path}',
+      workspacesLoading: '正在获取 DSH 工作区列表…',
+      workspacesUnavailable: '无法获取工作区列表，请点“刷新”重试。',
+      workspacesEmpty: 'DSH 尚无已配置的工作区，请先在 DSH 中添加工作区。',
       sessionMode: '会话模式',
       modeShared: '同一个会话：所有请求都在一个会话中处理',
       modeThread: '每个消息串一个新会话：串内追问继续使用它',
@@ -160,7 +166,7 @@ window.__ModuleLoader__.load({
       sharedHint: '对所有环境生效。',
       autoCreateSession: '共享会话模式下，没有指定或绑定会话时自动新建',
       workspace: '默认工作区目录',
-      workspaceHint: '没有设置工作区的路由在这里新建会话；留空时使用 DSH 的第一个工作区。',
+      workspaceHint: '从当前 DSH 已配置的工作区中选择；没有设置工作区的路由会在此工作区新建会话。留空时使用第一个工作区。',
       sessionTitle: '新建会话的标题前缀',
       sessionTitleHint: '会自动加上路由名称，例如“Mattermost · @orion-agent”。',
       maxConcurrent: '同时处理的请求数',
@@ -263,9 +269,15 @@ window.__ModuleLoader__.load({
       routeMention: '@name',
       routeMentionHint: 'Without @; empty uses the bot account username.',
       routeWorkspace: 'Workspace directory',
-      routeWorkspaceHint: 'Answer in the DSH workspace of this directory; empty uses the shared default workspace.',
+      routeWorkspaceHint: 'Choose from the current DSH workspaces; empty uses the shared default workspace.',
       routeWorkspaceKnown: 'DSH workspace: {title}',
-      routeWorkspaceNew: 'Not a DSH workspace yet: it is added on first use.',
+      routeWorkspaceNew: 'The saved directory is not in the current DSH workspace list; leaving it unchanged preserves it, or choose a registered workspace.',
+      workspaceFirst: 'Automatic: use the first DSH workspace',
+      workspaceInherit: 'Use the shared default workspace',
+      workspaceUnlisted: 'Current value is not in the DSH workspace list: {path}',
+      workspacesLoading: 'Loading DSH workspaces…',
+      workspacesUnavailable: 'Could not load workspaces; select Refresh to retry.',
+      workspacesEmpty: 'No workspaces configured in DSH yet. Add a workspace in DSH first.',
       sessionMode: 'Session mode',
       modeShared: 'One session: every request in the same session',
       modeThread: 'New session per thread: follow-ups in the thread reuse it',
@@ -313,7 +325,7 @@ window.__ModuleLoader__.load({
       sharedHint: 'Apply to every environment.',
       autoCreateSession: 'One-session routes: create a session when none is selected or bound',
       workspace: 'Default workspace directory',
-      workspaceHint: 'Routes without their own workspace create sessions here; empty uses the first DSH workspace.',
+      workspaceHint: 'Choose from the current DSH workspaces. Routes without a workspace create sessions here; empty uses the first workspace.',
       sessionTitle: 'Title prefix of created sessions',
       sessionTitleHint: 'The route name is appended, e.g. "Mattermost · @orion-agent".',
       maxConcurrent: 'Requests at the same time',
@@ -702,6 +714,12 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
       return data
     }
 
+    /** The authenticated Host endpoint projects the current DSH workspaceRegistry.list(). */
+    async function fetchConfiguredWorkspaces() {
+      const data = await api('workspaces')
+      return Array.isArray(data.workspaces) ? data.workspaces : null
+    }
+
     function liveState(form, status, t) {
       if (!form.enabled) return { tone: 'idle', text: t('stateDisabled') }
       if (form.fresh) return { tone: 'idle', text: t('stateUnsaved') }
@@ -743,6 +761,30 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
         onChange: (event) => onChange(event.target.value),
       }
       return multiline ? h('textarea', { ...props, rows: 3 }) : h('input', { ...props, type: type ?? 'text' })
+    }
+
+    /** Select a registered DSH workspace by path; preserve a configured path that disappeared from the registry. */
+    function WorkspacePicker({ id, value, workspaces, disabled, onChange, onRefresh, emptyLabel, t }) {
+      const available = Array.isArray(workspaces)
+      const listed = available && workspaces.some((workspace) => workspace.path === value)
+      const options = [h('option', { key: '', value: '' }, emptyLabel)]
+      if (value && !listed) options.push(h('option', { key: `unlisted:${value}`, value }, fill(t('workspaceUnlisted'), { path: value })))
+      if (available) {
+        for (const workspace of workspaces) {
+          options.push(h('option', { key: workspace.id ?? workspace.path, value: workspace.path }, `${workspace.title} — ${workspace.path}`))
+        }
+      }
+      return h('div', { className: `${C}-row` },
+        h('select', { id, className: `${C}-input`, value, disabled: disabled || !available, onChange: (event) => onChange(event.target.value) }, options),
+        h('button', { type: 'button', className: `${C}-button`, disabled, onClick: onRefresh }, t('refresh')))
+    }
+
+    function workspaceHintOf(workspaces, value, baseHint, t) {
+      if (workspaces === undefined) return t('workspacesLoading')
+      if (!Array.isArray(workspaces)) return t('workspacesUnavailable')
+      if (value && !workspaces.some((workspace) => workspace.path === value)) return t('routeWorkspaceNew')
+      if (workspaces.length === 0) return t('workspacesEmpty')
+      return baseHint
     }
 
     function Toggle({ id, label, hint, checked, onChange, disabled }) {
@@ -787,17 +829,14 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
     const MODE_TAG = { shared: 'tagShared', thread: 'tagThread', new: 'tagNew' }
 
     /** The routes of one environment: @name → workspace directory → session mode (→ session). */
-    function RouteEditor({ form, status, sessions, workspaces, disabled, problems, t, onRouteChange, onAddRoute, onRemoveRoute, onRefreshSessions }) {
+    function RouteEditor({ form, status, sessions, workspaces, disabled, problems, t, onRouteChange, onAddRoute, onRemoveRoute, onRefreshSessions, onRefreshWorkspaces }) {
       const bot = status?.bot
       const liveRoutes = new Map((status?.routes ?? []).map((route) => [route.key, route]))
-      const listed = Array.isArray(workspaces)
-      const known = new Map((listed ? workspaces : []).map((workspace) => [workspace.path, workspace]))
-      const listId = `${C}-${form.key}-workspaces`
+      const known = new Map((Array.isArray(workspaces) ? workspaces : []).map((workspace) => [workspace.path, workspace]))
       return h('div', { className: `${C}-section` },
         h('p', { className: `${C}-group-title` }, t('routes')),
         h('p', { className: `${C}-hint` }, t('routesHint')),
         form.routes.length === 0 ? h('p', { className: `${C}-hint`, style: { paddingTop: 8 } }, fill(t('noRoutes'), { bot: bot ?? 'bot' })) : null,
-        listed ? h('datalist', { id: listId }, workspaces.map((workspace) => h('option', { key: workspace.path, value: workspace.path }, workspace.title))) : null,
         form.routes.map((route) => {
           const id = (field) => `${C}-${form.key}-${route.key}-${field}`
           const change = (field) => (value) => onRouteChange(form.key, route.key, field, value)
@@ -805,7 +844,9 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
           const mention = mentionOf(route.mentionName) || bot || ''
           const path = route.workspace.trim()
           const workspace = path ? known.get(path) : undefined
-          const workspaceHint = !path || !listed ? t('routeWorkspaceHint') : workspace ? fill(t('routeWorkspaceKnown'), { title: workspace.title }) : t('routeWorkspaceNew')
+          const workspaceHint = workspace
+            ? fill(t('routeWorkspaceKnown'), { title: workspace.title })
+            : workspaceHintOf(workspaces, path, t('routeWorkspaceHint'), t)
           const modeHint = route.sessionMode === 'thread' ? t('currentThread') : route.sessionMode === 'new' ? t('currentNew') : undefined
           return h('div', { key: route.key, className: `${C}-route`, 'data-route': route.key },
             h('div', { className: `${C}-route-head` },
@@ -815,7 +856,7 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
             h(Field, { id: id('mentionName'), label: t('routeMention'), hint: t('routeMentionHint'), problem, t },
               h(TextInput, { id: id('mentionName'), value: route.mentionName, onChange: change('mentionName'), disabled, invalid: Boolean(problem), placeholder: bot ?? 'orion-agent' })),
             h(Field, { id: id('workspace'), label: t('routeWorkspace'), hint: workspaceHint, t },
-              h('input', { id: id('workspace'), className: `${C}-input`, value: route.workspace, disabled, list: listed ? listId : undefined, spellCheck: false, autoComplete: 'off', placeholder: '/path/to/workspace', onChange: (event) => change('workspace')(event.target.value) })),
+              h(WorkspacePicker, { id: id('workspace'), value: route.workspace, workspaces, disabled, onChange: change('workspace'), onRefresh: onRefreshWorkspaces, emptyLabel: t('workspaceInherit'), t })),
             h(Field, { id: id('sessionMode'), label: t('sessionMode'), hint: modeHint, t },
               h('select', { id: id('sessionMode'), className: `${C}-input`, value: route.sessionMode, disabled, onChange: (event) => change('sessionMode')(event.target.value) },
                 h('option', { value: 'shared' }, t('modeShared')),
@@ -866,7 +907,8 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
               testText ? h('p', { className: test === 'running' ? `${C}-hint` : test?.ok ? `${C}-ok` : `${C}-error`, role: 'status' }, testText) : null)),
           h(RouteEditor, {
             form, status, sessions, workspaces: props.workspaces, disabled, problems, t,
-            onRouteChange: props.onRouteChange, onAddRoute: props.onAddRoute, onRemoveRoute: props.onRemoveRoute, onRefreshSessions: props.onRefreshSessions,
+            onRouteChange: props.onRouteChange, onAddRoute: props.onAddRoute, onRemoveRoute: props.onRemoveRoute,
+            onRefreshSessions: props.onRefreshSessions, onRefreshWorkspaces: props.onRefreshWorkspaces,
           }),
           h('p', { className: `${C}-group-title` }, t('triggers')),
           h(Toggle, { id: id('triggerOnMention'), label: t('onMention'), checked: form.triggerOnMention, onChange: change('triggerOnMention'), disabled }),
@@ -889,7 +931,7 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
             h('button', { type: 'button', className: `${C}-button`, 'data-variant': 'danger', disabled, onClick: () => props.onRemove(form.key) }, t('remove')))) : null)
     }
 
-    function SharedSection({ shared, problems, disabled, onChange, t }) {
+    function SharedSection({ shared, problems, workspaces, disabled, onChange, onRefreshWorkspaces, t }) {
       const id = (field) => `${C}-shared-${field}`
       const change = (field) => (value) => onChange(field, value)
       const number = (field) => h(Field, { id: id(field), label: t(field), hint: t(`${field}Hint`), problem: problems[`shared.${field}`], t },
@@ -898,8 +940,8 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
         h('div', { className: `${C}-section-head` }, h('h3', { className: `${C}-section-title` }, t('shared'))),
         h('p', { className: `${C}-hint` }, t('sharedHint')),
         h(Toggle, { id: id('autoCreateSession'), label: t('autoCreateSession'), checked: shared.autoCreateSession, onChange: change('autoCreateSession'), disabled }),
-        h(Field, { id: id('workspace'), label: t('workspace'), hint: t('workspaceHint'), t },
-          h(TextInput, { id: id('workspace'), value: shared.workspace, onChange: change('workspace'), disabled, placeholder: '/path/to/project' })),
+        h(Field, { id: id('workspace'), label: t('workspace'), hint: workspaceHintOf(workspaces, shared.workspace, t('workspaceHint'), t), t },
+          h(WorkspacePicker, { id: id('workspace'), value: shared.workspace, workspaces, disabled, onChange: change('workspace'), onRefresh: onRefreshWorkspaces, emptyLabel: t('workspaceFirst'), t })),
         h(Field, { id: id('sessionTitle'), label: t('sessionTitle'), hint: t('sessionTitleHint'), t },
           h(TextInput, { id: id('sessionTitle'), value: shared.sessionTitle, onChange: change('sessionTitle'), disabled, placeholder: SHARED_DEFAULTS.sessionTitle })),
         number('maxConcurrent'),
@@ -974,14 +1016,18 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
         } catch {
           setSessions(null)
         }
+      }, [])
+      const loadWorkspaces = useCallback(async () => {
         try {
-          const data = await api('workspaces')
-          setWorkspaces(Array.isArray(data.workspaces) ? data.workspaces : null)
+          setWorkspaces(await fetchConfiguredWorkspaces())
         } catch {
           setWorkspaces(null)
         }
       }, [])
-      useEffect(() => { void loadSessions() }, [loadSessions])
+      useEffect(() => {
+        void loadSessions()
+        void loadWorkspaces()
+      }, [loadSessions, loadWorkspaces])
 
       const editable = snapshot.status === 'ready' && snapshot.writable
       const { ops, problems } = useMemo(() => buildOps(current, snapshot.value), [current, snapshot.value])
@@ -1082,10 +1128,11 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
             ? h('p', { className: `${C}-empty` }, t('noEnvironments'))
             : current.connections.map((item) => h(ConnectionCard, {
               key: item.key, form: item, status: live?.[item.key], sessions, workspaces, expanded: expanded.has(item.key), disabled, problems, test: tests[item.key], t,
-              onChange: onConnectionChange, onToggle, onRemove, onTest, onReconnect, onRefreshSessions: () => void loadSessions(),
+              onChange: onConnectionChange, onToggle, onRemove, onTest, onReconnect,
+              onRefreshSessions: () => void loadSessions(), onRefreshWorkspaces: () => void loadWorkspaces(),
               onRouteChange, onAddRoute, onRemoveRoute,
             }))),
-        h(SharedSection, { shared: current.shared, problems, disabled, t, onChange: (field, value) => edit((next) => { next.shared[field] = value }) }),
+        h(SharedSection, { shared: current.shared, problems, workspaces, disabled, t, onRefreshWorkspaces: () => void loadWorkspaces(), onChange: (field, value) => edit((next) => { next.shared[field] = value }) }),
         h(Collapsible, { title: t('messages'), hint: t('messagesHint'), open: showMessages, onToggle: () => setShowMessages(!showMessages), t },
           Object.keys(DEFAULT_MESSAGES).map((key) => h(Field, { key, id: `${C}-message-${key}`, label: t(`message.${key}`), t },
             h(TextInput, { id: `${C}-message-${key}`, value: current.messages[key], disabled, placeholder: DEFAULT_MESSAGES[key], onChange: (value) => edit((next) => { next.messages[key] = value }) })))),
@@ -1112,7 +1159,7 @@ textarea.${C}-input { height: auto; min-height: 60px; padding: 8px 12px; resize:
         }, ({ view, t }) => (view === 'page' ? h(SettingsPage, { form, t: t ?? bound }) : null))), 'dsh-mattermost: settings page')
       },
       /** Pure helpers and the page component, for tests only. */
-      testing: { toForm, buildOps, validate, connectionKeys, routeKeys, newConnection, newRoute, DEFAULT_MESSAGES, DEFAULT_PROMPT_HEADER, CONNECTION_DEFAULTS, ROUTE_DEFAULTS, SHARED_DEFAULTS, zh, en, SettingsPage, ConnectionCard },
+      testing: { toForm, buildOps, validate, connectionKeys, routeKeys, newConnection, newRoute, DEFAULT_MESSAGES, DEFAULT_PROMPT_HEADER, CONNECTION_DEFAULTS, ROUTE_DEFAULTS, SHARED_DEFAULTS, zh, en, SettingsPage, ConnectionCard, SharedSection, WorkspacePicker, fetchConfiguredWorkspaces },
     }
   },
 })
